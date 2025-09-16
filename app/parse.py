@@ -49,7 +49,6 @@ def scrape_products_from_page(driver: webdriver.Chrome, url: str, product_select
     items = driver.find_elements(By.CSS_SELECTOR, product_selector)
     for item in items:
         try:
-            # Витягуємо повну назву з атрибута title елемента <a class="title">
             title = item.find_element(By.CSS_SELECTOR, "a.title").get_attribute("title")
         except:
             title = ""
