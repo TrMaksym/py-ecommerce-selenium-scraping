@@ -1,11 +1,11 @@
 import csv
-import json
 import time
 from dataclasses import dataclass
 import random
 from typing import List
 from urllib.parse import urljoin
 from selenium import webdriver
+from selenium.common import NoSuchElementException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -27,10 +27,11 @@ def scrape_products_from_page(driver: webdriver.Chrome, url: str, product_select
     wait = WebDriverWait(driver, 10)
 
     try:
-        accept_btn = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, ".accept-cookies-button")))
-        accept_btn.click()
-    except:
-        pass
+        cookies = driver.find_element(By.CSS_SELECTOR, ".accept-cookies-button")
+        if cookies:
+            cookies[0].click()
+    except Exception as e:
+        print(f"Cookie banner exception{e}")
 
     products: List[Product] = []
 
@@ -39,36 +40,48 @@ def scrape_products_from_page(driver: webdriver.Chrome, url: str, product_select
             try:
                 more_btn = driver.find_element(By.CSS_SELECTOR, ".btn.btn-primary.btn-lg.btn-block")
                 if more_btn.is_displayed():
+                    current_count = len(driver.find_elements(By.CSS_SELECTOR, product_selector))
                     driver.execute_script("arguments[0].click();", more_btn)
-                    time.sleep(1)
+                    wait.until(lambda d: len(d.find_elements(By.CSS_SELECTOR, product_selector)) > current_count or not more_btn.is_displayed())
+
                 else:
                     break
-            except:
+            except NoSuchElementException:
                 break
-
+    wait.until(lambda d: len(d.find_elements(By.CSS_SELECTOR, product_selector)))
     items = driver.find_elements(By.CSS_SELECTOR, product_selector)
+
     for item in items:
         try:
             title = item.find_element(By.CSS_SELECTOR, "a.title").get_attribute("title")
-        except:
+        except NoSuchElementException:
             title = ""
+
         try:
             description = item.find_element(By.CSS_SELECTOR, ".description").text
-        except:
+        except NoSuchElementException:
             description = ""
+
         try:
-            price = float(item.find_element(By.CSS_SELECTOR, ".price").text.replace("$", ""))
-        except:
+            price_text = item.find_element(By.CSS_SELECTOR, ".price").text.replace("$", "").strip()
+            price = float(price_text) if price_text else 0.0
+        except (NoSuchElementException, ValueError):
             price = 0.0
+
         try:
             stars = item.find_elements(By.CSS_SELECTOR, ".ratings .ws-icon-star")
             rating = len(stars)
-        except:
+        except NoSuchElementException:
             rating = 0
+
         try:
-            num_reviews_text = item.find_element(By.CSS_SELECTOR, ".ratings .pull-right, .review-count span").text
-            num_of_reviews = int(num_reviews_text.split()[0])
-        except:
+            num_reviews_elem = item.find_elements(By.CSS_SELECTOR, ".ratings .pull-right") \
+                               or item.find_elements(By.CSS_SELECTOR, ".review-count span")
+            if num_reviews_elem:
+                num_of_reviews = int(num_reviews_elem[0].text.split()[0])
+            else:
+                num_of_reviews = 0
+        except (NoSuchElementException, ValueError):
             num_of_reviews = 0
 
         products.append(Product(title, description, price, rating, num_of_reviews))
